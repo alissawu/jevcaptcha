@@ -5,4 +5,5 @@
 export * from './types.js';
 export * from './jev.js';
 export * from './solvers/grid.js';
+export * from './solvers/grid-fast.js';
 export { describeTile, describeTiles, describeTilesBatch } from './vision/describe.js';
