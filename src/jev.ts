@@ -1,17 +1,16 @@
 /**
- * TypeSafe/JEV API wrapper
+ * JEV decision layer
  * 
- * JEV is a text-only decision model - we feed it structured descriptions
- * of captcha tiles and it returns which ones match the prompt.
+ * Takes text descriptions of captcha tiles and selects which match the prompt.
+ * Uses a fast text model (no images).
  */
 
 import type { TileDescription } from './types.js';
 
-const JEV_BASE_URL = 'https://api.typesafe.ai/v1';
-
 export interface JevConfig {
   apiKey: string;
-  model?: string;  // default: jev-1
+  model?: string;  // default: qwen/qwen3.7-flash
+  baseUrl?: string;
 }
 
 export interface JevGridRequest {
@@ -25,15 +24,16 @@ export interface JevGridResponse {
 }
 
 /**
- * Ask JEV which tiles match the captcha prompt
+ * Ask which tiles match the captcha prompt
  */
 export async function selectTiles(
   request: JevGridRequest,
   config: JevConfig
 ): Promise<JevGridResponse> {
-  const model = config.model || 'jev-1';
+  const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
+  const model = config.model || 'qwen/qwen3.7-flash';
   
-  // Format tiles as structured state for JEV
+  // Format tiles as structured state
   const tileList = request.tiles
     .map(t => `[${t.index}] ${t.description}`)
     .join('\n');
@@ -54,9 +54,9 @@ Be conservative - only select tiles that clearly match. If uncertain, don't sele
 Tiles:
 ${tileList}
 
-Which tiles match? Return JSON: {"selected": [indices], "reasoning": ["why"]}`;
+Which tiles match? Return JSON only: {"selected": [indices], "reasoning": ["why"]}`;
 
-  const response = await fetch(`${JEV_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -65,7 +65,7 @@ Which tiles match? Return JSON: {"selected": [indices], "reasoning": ["why"]}`;
     body: JSON.stringify({
       model,
       temperature: 0,
-      max_tokens: 256,
+      max_tokens: 1024,  // need room for reasoning + output
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -81,7 +81,7 @@ Which tiles match? Return JSON: {"selected": [indices], "reasoning": ["why"]}`;
   const data = await response.json() as any;
   const content = data.choices?.[0]?.message?.content || '';
   
-  // Parse JSON from response
+  // Parse JSON from response (may be wrapped in markdown code block)
   const jsonMatch = content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     throw new Error(`Failed to parse JEV response: ${content}`);

@@ -84,13 +84,16 @@ export async function solveGrid(
     tileDescriptions = await describeTiles(tiles, config.vision);
   }
   
-  // Ask JEV which tiles match
+  // Ask which tiles match
   const jevResponse = await selectTiles(
     {
       prompt: challenge.prompt,
       tiles: tileDescriptions,
     },
-    { apiKey: config.jevApiKey }
+    { 
+      apiKey: config.vision.apiKey!,  // reuse OpenRouter key
+      baseUrl: config.vision.baseUrl,
+    }
   );
   
   return {

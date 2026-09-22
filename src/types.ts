@@ -41,13 +41,17 @@ export interface SliderSolution {
 }
 
 export interface SolverConfig {
-  /** TypeSafe/JEV API key */
-  jevApiKey: string;
-  /** Vision model provider config */
+  /** Vision model provider config (also used for selection) */
   vision: {
     provider: 'openrouter' | 'local';
     apiKey?: string;
-    model?: string;  // e.g. "qwen/qwen-2.5-vl-7b-instruct" or "openai/gpt-4o-mini"
+    model?: string;  // e.g. "qwen/qwen3.7-flash"
+    baseUrl?: string;
+  };
+  /** Optional: separate config for selection model */
+  selection?: {
+    apiKey?: string;
+    model?: string;
     baseUrl?: string;
   };
 }

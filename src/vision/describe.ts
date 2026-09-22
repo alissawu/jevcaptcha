@@ -17,7 +17,7 @@ export async function describeTile(
   config: SolverConfig['vision']
 ): Promise<string> {
   const baseUrl = config.baseUrl || OPENROUTER_BASE;
-  const model = config.model || 'qwen/qwen-2.5-vl-7b-instruct';
+  const model = config.model || 'qwen/qwen3.7-flash';
   
   const prompt = `Describe this image tile in 5-15 words. Focus on:
 - Main objects (vehicles, animals, signs, buildings, nature)
@@ -92,7 +92,7 @@ export async function describeTilesBatch(
   config: SolverConfig['vision']
 ): Promise<TileDescription[]> {
   const baseUrl = config.baseUrl || OPENROUTER_BASE;
-  const model = config.model || 'qwen/qwen-2.5-vl-7b-instruct';
+  const model = config.model || 'qwen/qwen3.7-flash';
   
   const totalTiles = rows * cols;
   
@@ -112,7 +112,7 @@ Return JSON array: [{"tile": 0, "desc": "..."}, {"tile": 1, "desc": "..."}, ...]
     },
     body: JSON.stringify({
       model,
-      max_tokens: 512,
+      max_tokens: 2048,  // need more for reasoning + output
       temperature: 0,
       messages: [{
         role: 'user',

@@ -28,29 +28,33 @@ async function captureHCaptcha() {
   const prompt = await promptEl.textContent().catch(() => 'Unknown prompt');
   console.log('Prompt:', prompt);
   
-  // Screenshot the image grid
-  const grid = challengeFrame.locator('.task-image');
-  const gridBox = await grid.boundingBox();
+  // Try different challenge selectors
+  const selectors = [
+    '.task-image',      // grid challenges
+    '.task-grid',       // alternative grid
+    '.challenge-view',  // general challenge area
+    '.display-language-picker ~ div', // fallback
+  ];
   
-  if (gridBox) {
-    const screenshot = await page.screenshot({
-      clip: {
-        x: gridBox.x,
-        y: gridBox.y,
-        width: gridBox.width,
-        height: gridBox.height,
-      },
-    });
-    
-    const outPath = path.join(import.meta.dirname, 'fixtures', 'hcaptcha_sample.png');
-    fs.writeFileSync(outPath, screenshot);
-    console.log(`Saved: ${outPath}`);
-    console.log(`Grid size: ${gridBox.width}x${gridBox.height}`);
-  } else {
-    console.log('Could not find grid element');
-    
-    // Fallback: screenshot the whole challenge
-    const screenshot = await page.screenshot();
+  let saved = false;
+  for (const sel of selectors) {
+    const el = challengeFrame.locator(sel).first();
+    const box = await el.boundingBox().catch(() => null);
+    if (box && box.width > 100) {
+      const screenshot = await page.screenshot({
+        clip: { x: box.x, y: box.y, width: box.width, height: box.height },
+      });
+      const outPath = path.join(import.meta.dirname, 'fixtures', `hcaptcha_${sel.replace(/[^a-z]/g, '')}.png`);
+      fs.writeFileSync(outPath, screenshot);
+      console.log(`Saved ${sel}: ${outPath} (${box.width}x${box.height})`);
+      saved = true;
+      break;
+    }
+  }
+  
+  if (!saved) {
+    // Fallback: screenshot the whole challenge iframe
+    const screenshot = await page.screenshot({ fullPage: true });
     const outPath = path.join(import.meta.dirname, 'fixtures', 'hcaptcha_full.png');
     fs.writeFileSync(outPath, screenshot);
     console.log(`Saved full page: ${outPath}`);

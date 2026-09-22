@@ -7,11 +7,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const config: SolverConfig = {
-  jevApiKey: process.env.TYPESAFE_API_KEY!,
   vision: {
     provider: 'openrouter',
     apiKey: process.env.OPENROUTER_API_KEY!,
-    model: 'qwen/qwen-2.5-vl-7b-instruct',  // cheap and good
+    model: 'qwen/qwen3.7-flash',  // cheap vision model
   },
 };
 
