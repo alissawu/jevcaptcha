@@ -7,10 +7,10 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const models = [
-  'google/gemini-3.7-flash',
-  'google/gemini-3.8-flash',
+  'qwen/qwen3-vl-8b-instruct',   // cheapest vision
+  'qwen/qwen3-vl-32b-instruct',  // better quality
   'openai/gpt-4o-mini',
-  'qwen/qwen3.7-flash',
+  'google/gemini-3.7-flash',
 ];
 
 async function benchmark() {

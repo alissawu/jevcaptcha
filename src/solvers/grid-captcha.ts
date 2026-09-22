@@ -1,0 +1,217 @@
+/**
+ * Grid CAPTCHA solvers - static and dynamic variants
+ */
+
+import type { Page, FrameLocator } from 'playwright';
+import { describeTilesBatch } from '../vision/describe.js';
+import type { SolverConfig, TileDescription } from '../types.js';
+
+export interface GridSolveResult {
+  success: boolean;
+  rounds: number;
+  totalTiles: number[];
+  duration: number;
+  error?: string;
+}
+
+interface GridContext {
+  page: Page;
+  frame?: FrameLocator;
+  config: SolverConfig;
+  openrouterKey: string;
+}
+
+/**
+ * Select tiles based on descriptions using text model
+ */
+async function selectTiles(
+  prompt: string,
+  descriptions: TileDescription[],
+  openrouterKey: string
+): Promise<number[]> {
+  const descText = descriptions
+    .map(d => `Tile ${d.index}: ${d.description}`)
+    .join('\n');
+
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${openrouterKey}`,
+    },
+    body: JSON.stringify({
+      model: 'qwen/qwen3.8-flash',
+      max_tokens: 256,
+      temperature: 0,
+      messages: [
+        { 
+          role: 'system', 
+          content: `You select CAPTCHA tiles. Given descriptions and a target, return matching tile indices.
+Be conservative - only include tiles that CLEARLY match. Return ONLY a JSON array like [0, 3, 7]` 
+        },
+        { role: 'user', content: `Target: ${prompt}\n\nDescriptions:\n${descText}\n\nJSON array:` },
+      ],
+    }),
+  });
+
+  const data = await response.json() as any;
+  const content = data.choices?.[0]?.message?.content || '[]';
+  const match = content.match(/\[[\d,\s]*\]/);
+  return match ? JSON.parse(match[0]) : [];
+}
+
+/**
+ * Solve a static grid CAPTCHA (select tiles once, then verify)
+ * 
+ * Use when prompt is like "Select all squares with X"
+ */
+export async function solveStaticGrid(
+  ctx: GridContext,
+  gridSelector: string,
+  tileSelector: string,
+  prompt: string,
+  rows: number,
+  cols: number
+): Promise<GridSolveResult> {
+  const startTime = Date.now();
+  const allTiles: number[] = [];
+  
+  try {
+    const container = ctx.frame 
+      ? ctx.frame.locator(gridSelector)
+      : ctx.page.locator(gridSelector);
+    
+    // Screenshot grid
+    const gridBuffer = await container.screenshot();
+    const gridBase64 = gridBuffer.toString('base64');
+    
+    // Describe tiles
+    const descriptions = await describeTilesBatch(gridBase64, rows, cols, ctx.config.vision);
+    
+    // Select matching tiles
+    const tiles = await selectTiles(prompt, descriptions, ctx.openrouterKey);
+    allTiles.push(...tiles);
+    
+    // Click tiles
+    const tileElements = ctx.frame
+      ? ctx.frame.locator(tileSelector)
+      : ctx.page.locator(tileSelector);
+    
+    for (const idx of tiles) {
+      await tileElements.nth(idx).click();
+      await ctx.page.waitForTimeout(200);
+    }
+    
+    return {
+      success: true,
+      rounds: 1,
+      totalTiles: allTiles,
+      duration: Date.now() - startTime,
+    };
+    
+  } catch (e: any) {
+    return {
+      success: false,
+      rounds: 0,
+      totalTiles: allTiles,
+      duration: Date.now() - startTime,
+      error: e.message,
+    };
+  }
+}
+
+/**
+ * Solve a dynamic grid CAPTCHA (tiles refresh after clicking, repeat until clear)
+ * 
+ * Use when prompt contains "Click verify once there are none left"
+ */
+export async function solveDynamicGrid(
+  ctx: GridContext,
+  gridSelector: string,
+  tileSelector: string,
+  prompt: string,
+  rows: number,
+  cols: number,
+  maxRounds: number = 5
+): Promise<GridSolveResult> {
+  const startTime = Date.now();
+  const allTiles: number[] = [];
+  let round = 0;
+  
+  try {
+    const container = ctx.frame 
+      ? ctx.frame.locator(gridSelector)
+      : ctx.page.locator(gridSelector);
+    
+    const tileElements = ctx.frame
+      ? ctx.frame.locator(tileSelector)
+      : ctx.page.locator(tileSelector);
+    
+    while (round < maxRounds) {
+      round++;
+      
+      // Screenshot grid
+      const gridBuffer = await container.screenshot();
+      const gridBase64 = gridBuffer.toString('base64');
+      
+      // Describe tiles
+      const descriptions = await describeTilesBatch(gridBase64, rows, cols, ctx.config.vision);
+      
+      // Select matching tiles
+      const tiles = await selectTiles(prompt, descriptions, ctx.openrouterKey);
+      
+      // If no matches, we're done
+      if (tiles.length === 0) {
+        break;
+      }
+      
+      allTiles.push(...tiles);
+      
+      // Click tiles
+      for (const idx of tiles) {
+        await tileElements.nth(idx).click();
+        await ctx.page.waitForTimeout(300);
+      }
+      
+      // Wait for tiles to refresh
+      await ctx.page.waitForTimeout(1500);
+    }
+    
+    return {
+      success: true,
+      rounds: round,
+      totalTiles: allTiles,
+      duration: Date.now() - startTime,
+    };
+    
+  } catch (e: any) {
+    return {
+      success: false,
+      rounds: round,
+      totalTiles: allTiles,
+      duration: Date.now() - startTime,
+      error: e.message,
+    };
+  }
+}
+
+/**
+ * Auto-detect and solve grid CAPTCHA
+ */
+export async function solveGridAuto(
+  ctx: GridContext,
+  gridSelector: string,
+  tileSelector: string,
+  prompt: string,
+  rows: number,
+  cols: number
+): Promise<GridSolveResult> {
+  // Check if dynamic (prompt mentions "none left" or similar)
+  const isDynamic = /none left|no more|until.*clear/i.test(prompt);
+  
+  if (isDynamic) {
+    return solveDynamicGrid(ctx, gridSelector, tileSelector, prompt, rows, cols);
+  } else {
+    return solveStaticGrid(ctx, gridSelector, tileSelector, prompt, rows, cols);
+  }
+}
