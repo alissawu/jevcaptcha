@@ -1,0 +1,22 @@
+{
+  "name": "jevcaptcha",
+  "version": "0.1.0",
+  "description": "Local captcha solver using vision models + JEV",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "npx tsx test/grid.test.ts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "playwright": "^1.63.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "sharp": "^0.33.0"
+  }
+}
