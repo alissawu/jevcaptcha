@@ -17,6 +17,7 @@
     "typescript": "^5.4.0"
   },
   "dependencies": {
+    "patchright": "^1.63.0",
     "sharp": "^0.33.0"
   }
 }
