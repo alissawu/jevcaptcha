@@ -1,15 +1,18 @@
 /**
  * Grid CAPTCHA solvers - static and dynamic variants
+ * Uses TypeSafe Jev for tile selection
  */
 
 import type { Page, FrameLocator } from 'playwright';
 import { describeTilesBatch } from '../vision/describe.js';
+import { selectTiles } from '../jev.js';
 import type { SolverConfig, TileDescription } from '../types.js';
 
 export interface GridSolveResult {
   success: boolean;
   rounds: number;
   totalTiles: number[];
+  probabilities?: number[];
   duration: number;
   error?: string;
 }
@@ -18,46 +21,6 @@ interface GridContext {
   page: Page;
   frame?: FrameLocator;
   config: SolverConfig;
-  openrouterKey: string;
-}
-
-/**
- * Select tiles based on descriptions using text model
- */
-async function selectTiles(
-  prompt: string,
-  descriptions: TileDescription[],
-  openrouterKey: string
-): Promise<number[]> {
-  const descText = descriptions
-    .map(d => `Tile ${d.index}: ${d.description}`)
-    .join('\n');
-
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${openrouterKey}`,
-    },
-    body: JSON.stringify({
-      model: 'qwen/qwen3.8-flash',
-      max_tokens: 256,
-      temperature: 0,
-      messages: [
-        { 
-          role: 'system', 
-          content: `You select CAPTCHA tiles. Given descriptions and a target, return matching tile indices.
-Be conservative - only include tiles that CLEARLY match. Return ONLY a JSON array like [0, 3, 7]` 
-        },
-        { role: 'user', content: `Target: ${prompt}\n\nDescriptions:\n${descText}\n\nJSON array:` },
-      ],
-    }),
-  });
-
-  const data = await response.json() as any;
-  const content = data.choices?.[0]?.message?.content || '[]';
-  const match = content.match(/\[[\d,\s]*\]/);
-  return match ? JSON.parse(match[0]) : [];
 }
 
 /**
@@ -88,16 +51,20 @@ export async function solveStaticGrid(
     // Describe tiles
     const descriptions = await describeTilesBatch(gridBase64, rows, cols, ctx.config.vision);
     
-    // Select matching tiles
-    const tiles = await selectTiles(prompt, descriptions, ctx.openrouterKey);
-    allTiles.push(...tiles);
+    // Select matching tiles using TypeSafe Jev
+    const jevResult = await selectTiles(
+      { prompt, tiles: descriptions },
+      ctx.config.jev
+    );
+    
+    allTiles.push(...jevResult.selectedIndices);
     
     // Click tiles
     const tileElements = ctx.frame
       ? ctx.frame.locator(tileSelector)
       : ctx.page.locator(tileSelector);
     
-    for (const idx of tiles) {
+    for (const idx of jevResult.selectedIndices) {
       await tileElements.nth(idx).click();
       await ctx.page.waitForTimeout(200);
     }
@@ -106,6 +73,7 @@ export async function solveStaticGrid(
       success: true,
       rounds: 1,
       totalTiles: allTiles,
+      probabilities: jevResult.probabilities,
       duration: Date.now() - startTime,
     };
     
@@ -137,6 +105,7 @@ export async function solveDynamicGrid(
   const startTime = Date.now();
   const allTiles: number[] = [];
   let round = 0;
+  let lastProbabilities: number[] | undefined;
   
   try {
     const container = ctx.frame 
@@ -157,18 +126,23 @@ export async function solveDynamicGrid(
       // Describe tiles
       const descriptions = await describeTilesBatch(gridBase64, rows, cols, ctx.config.vision);
       
-      // Select matching tiles
-      const tiles = await selectTiles(prompt, descriptions, ctx.openrouterKey);
+      // Select matching tiles using TypeSafe Jev
+      const jevResult = await selectTiles(
+        { prompt, tiles: descriptions },
+        ctx.config.jev
+      );
+      
+      lastProbabilities = jevResult.probabilities;
       
       // If no matches, we're done
-      if (tiles.length === 0) {
+      if (jevResult.selectedIndices.length === 0) {
         break;
       }
       
-      allTiles.push(...tiles);
+      allTiles.push(...jevResult.selectedIndices);
       
       // Click tiles
-      for (const idx of tiles) {
+      for (const idx of jevResult.selectedIndices) {
         await tileElements.nth(idx).click();
         await ctx.page.waitForTimeout(300);
       }
@@ -181,6 +155,7 @@ export async function solveDynamicGrid(
       success: true,
       rounds: round,
       totalTiles: allTiles,
+      probabilities: lastProbabilities,
       duration: Date.now() - startTime,
     };
     

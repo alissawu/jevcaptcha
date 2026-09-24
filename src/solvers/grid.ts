@@ -1,10 +1,10 @@
 /**
- * Grid captcha solver (hCaptcha, reCAPTCHA v2)
+ * Grid captcha solver (hCaptcha, reCAPTCHA v2, GeeTest)
  * 
  * Flow:
  * 1. Split grid into individual tiles (or use batch describe)
  * 2. Get text description for each tile via vision model
- * 3. Send descriptions + prompt to JEV
+ * 3. Send descriptions + prompt to TypeSafe Jev
  * 4. Return tile indices to click
  */
 
@@ -84,20 +84,17 @@ export async function solveGrid(
     tileDescriptions = await describeTiles(tiles, config.vision);
   }
   
-  // Ask which tiles match
+  // Ask which tiles match using TypeSafe Jev
   const jevResponse = await selectTiles(
     {
       prompt: challenge.prompt,
       tiles: tileDescriptions,
     },
-    { 
-      apiKey: config.vision.apiKey!,  // reuse OpenRouter key
-      baseUrl: config.vision.baseUrl,
-    }
+    config.jev
   );
   
   return {
     tiles: jevResponse.selectedIndices,
-    reasoning: jevResponse.reasoning,
+    probabilities: jevResponse.probabilities,
   };
 }

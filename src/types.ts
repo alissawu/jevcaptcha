@@ -21,8 +21,8 @@ export interface GridChallenge {
 export interface GridSolution {
   /** 0-indexed tile indices to click */
   tiles: number[];
-  /** Per-tile reasoning from JEV */
-  reasoning?: string[];
+  /** Probabilities for each tile from Jev */
+  probabilities?: number[];
 }
 
 export interface SliderChallenge {
@@ -41,17 +41,15 @@ export interface SliderSolution {
 }
 
 export interface SolverConfig {
-  /** Vision model provider config (also used for selection) */
+  /** Vision model provider config (for describing tiles) */
   vision: {
     provider: 'openrouter' | 'local';
     apiKey?: string;
-    model?: string;  // e.g. "qwen/qwen3.7-flash"
+    model?: string;  // e.g. "qwen/qwen3-vl-8b-instruct"
     baseUrl?: string;
   };
-  /** Optional: separate config for selection model */
-  selection?: {
-    apiKey?: string;
-    model?: string;
-    baseUrl?: string;
+  /** TypeSafe Jev config (for tile selection) */
+  jev: {
+    apiKey: string;
   };
 }

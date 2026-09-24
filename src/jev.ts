@@ -1,16 +1,15 @@
 /**
- * JEV decision layer
+ * JEV decision layer using TypeSafe AI
  * 
  * Takes text descriptions of captcha tiles and selects which match the prompt.
- * Uses a fast text model (no images).
+ * Uses TypeSafe's System One model for fast, calibrated decisions.
  */
 
+import { TypeSafeClient, noul } from '@typesafe-ai/sdk';
 import type { TileDescription } from './types.js';
 
 export interface JevConfig {
   apiKey: string;
-  model?: string;  // default: qwen/qwen3.7-flash
-  baseUrl?: string;
 }
 
 export interface JevGridRequest {
@@ -20,77 +19,63 @@ export interface JevGridRequest {
 
 export interface JevGridResponse {
   selectedIndices: number[];
-  reasoning?: string[];
+  probabilities: number[];  // noul values for each tile
 }
 
 /**
- * Ask which tiles match the captcha prompt
+ * Ask which tiles match the captcha prompt using TypeSafe Jev
  */
 export async function selectTiles(
   request: JevGridRequest,
   config: JevConfig
 ): Promise<JevGridResponse> {
-  const baseUrl = config.baseUrl || 'https://openrouter.ai/api/v1';
-  const model = config.model || 'qwen/qwen3.7-flash';
+  const client = new TypeSafeClient({ apiKey: config.apiKey });
   
-  // Format tiles as structured state
-  const tileList = request.tiles
-    .map(t => `[${t.index}] ${t.description}`)
-    .join('\n');
+  // Extract target from prompt (e.g. "Select all images with buses" -> "buses")
+  const targetMatch = request.prompt.match(/(?:select all (?:images )?(?:with|containing|showing|of) )?(.+)/i);
+  const target = targetMatch?.[1] || request.prompt;
   
-  const systemPrompt = `You are solving a captcha grid challenge.
-You will receive:
-1. A prompt describing what to select (e.g. "Select all images with buses")
-2. A list of tile descriptions, each with an index
-
-Return a JSON object with:
-- "selected": array of tile indices that match the prompt
-- "reasoning": brief explanation for each selection
-
-Be conservative - only select tiles that clearly match. If uncertain, don't select.`;
-
-  const userPrompt = `Prompt: ${request.prompt}
-
-Tiles:
-${tileList}
-
-Which tiles match? Return JSON only: {"selected": [indices], "reasoning": ["why"]}`;
-
-  const response = await fetch(`${baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      max_tokens: 1024,  // need room for reasoning + output
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-    }),
+  // Build state with all tile descriptions
+  const state: Record<string, string> = {
+    target: target,
+  };
+  for (const tile of request.tiles) {
+    state[`tile_${tile.index}`] = tile.description;
+  }
+  
+  // Build questions - one Noul per tile
+  const questions: Record<string, ReturnType<typeof noul>> = {};
+  for (const tile of request.tiles) {
+    questions[`tile_${tile.index}`] = noul(
+      `Does \`tile_${tile.index}\` contain or depict a \`target\`?`
+    );
+  }
+  
+  const response = await client.systemOne({
+    state,
+    questions,
   });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`JEV API error ${response.status}: ${text}`);
-  }
-
-  const data = await response.json() as any;
-  const content = data.choices?.[0]?.message?.content || '';
   
-  // Parse JSON from response (may be wrapped in markdown code block)
-  const jsonMatch = content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error(`Failed to parse JEV response: ${content}`);
+  // Collect probabilities and select tiles above threshold
+  const probabilities: number[] = [];
+  const selectedIndices: number[] = [];
+  
+  for (const tile of request.tiles) {
+    const answer = response.answers[`tile_${tile.index}`];
+    const prob = answer.noul;
+    probabilities[tile.index] = prob;
+    
+    // Select if probability > 0.5
+    if (prob > 0.5) {
+      selectedIndices.push(tile.index);
+    }
   }
   
-  const parsed = JSON.parse(jsonMatch[0]);
+  // Sort by probability descending (for when we need top N)
+  selectedIndices.sort((a, b) => probabilities[b] - probabilities[a]);
   
   return {
-    selectedIndices: parsed.selected || [],
-    reasoning: parsed.reasoning,
+    selectedIndices,
+    probabilities,
   };
 }
