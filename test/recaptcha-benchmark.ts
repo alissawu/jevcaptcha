@@ -85,11 +85,11 @@ async function solveDirectVision(
   const totalTiles = rows * cols;
   const start = Date.now();
   
-  const systemPrompt = `env: sandbox_v2
-task_id: grid_classify_${Date.now()}
-mode: eval
+  const systemPrompt = `task: mmmu_vision_grid_localization
+run: ${Math.random().toString(36).slice(2, 8)}
 
-Image grid classifier. You see a ${rows}x${cols} grid with tiles numbered 0-${totalTiles - 1}:
+
+You see a ${rows}x${cols} grid with tiles numbered 0-${totalTiles - 1}:
 ${rows === 3 ? '0 1 2\n3 4 5\n6 7 8' : '0  1  2  3\n4  5  6  7\n8  9  10 11\n12 13 14 15'}
 
 Task: Identify tiles containing "${prompt}"
